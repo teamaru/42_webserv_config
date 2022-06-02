@@ -32,6 +32,7 @@ void ConfigValidator::validateConfigFile(const std::vector<std::string> tokens) 
     checkMainDirectives(tokens);
     checkDerective(tokens, DRCTV_NAME_SRVR);
     checkDerective(tokens, DRCTV_NAME_LCTN);
+    checkAllDirectives(tokens);
   } catch (...) {
     throw ;
   }
@@ -58,7 +59,7 @@ bool ConfigValidator::isServerExist(const std::vector<std::string> tokens) {
   return (std::find(tokens.begin(), tokens.end(), DRCTV_NAME_SRVR) != tokens.end());
 }
 
-bool ConfigValidator::checkDerective(const std::vector<std::string> tokens, const std::string target) {
+void ConfigValidator::checkDerective(const std::vector<std::string> tokens, const std::string target) {
   str_vec_itr it[2];
   it[BEGIN] = std::find(tokens.begin(), tokens.end(), target);
 
@@ -73,7 +74,6 @@ bool ConfigValidator::checkDerective(const std::vector<std::string> tokens, cons
     }
     it[BEGIN] = std::find(it[BEGIN], tokens.end(), target);
   }
-  return (true);
 }
 
 void ConfigValidator::findEndBrace(str_vec_itr &it) {
@@ -84,63 +84,37 @@ void ConfigValidator::findEndBrace(str_vec_itr &it) {
   }
 }
 
-bool ConfigValidator::searchToken(str_vec_itr it[2], const std::string target) {
-  while (++it[BEGIN] != it[END]) {
-    if (*it[BEGIN] == "{")
-      findEndBrace(++it[BEGIN]);
-    if (*it[BEGIN] == target)
-      return (true);
-  }
-  return (false);
-}
-
-bool ConfigValidator::scanDerective(str_vec_itr it[2], const std::string target) {
-  std::map<const std::string, int> directives = createDuplicateCheckMap(target);
+void ConfigValidator::scanDerective(str_vec_itr it[2], const std::string target) {
   while (++it[BEGIN] != it[END]) {
     if (*it[BEGIN] == "{")
       findEndBrace(++it[BEGIN]);
     if (!isValidDirectiveName(it[BEGIN], target))
       throw (std::runtime_error(ERR_MSG_INVLD_DRCTV));
-    if (isDerectiveDuplicated(it[BEGIN], directives))
+    if (isDerectiveDuplicated(it[BEGIN], it[END]))
       throw (std::runtime_error(ERR_MSG_DPLCT_DRCTV));
+    if (!isValidValueNum(it[BEGIN]))
+      throw (std::runtime_error(ERR_MSG_INVLD_VALUE_NUM));
+    if (!isLocationDuplicated(it[BEGIN], it[END]))
+      throw (std::runtime_error(ERR_MSG_DPLCTD_LCTN));
+  }
+}
+
+bool ConfigValidator::isDerectiveDuplicated(str_vec_itr begin, str_vec_itr end) {
+  std::string target = *begin;
+  if (!isDirective(begin) || target == DRCTV_NAME_LCTN || target == DRCTV_NAME_ERR_PG)
+    return (false);
+  while (++begin != end) {
+    if (!isDirective(begin))
+      continue ;
+    if (target == *begin)
+      return (true);
   }
   return (false);
 }
 
-bool ConfigValidator::isDerectiveDuplicated(str_vec_itr it, std::map<const std::string, int> &directives) {
-  if (!isDirective(it))
-    return (false);
-  std::map<const std::string, int>::iterator directive = directives.begin();
-  while (directive != directives.end()) {
-    if (*it == directive->first) {
-      directive->second++;
-      if (directive->second >= 2)
-        return (true);
-    }
-    directive++;
-  }
-  return (false);
-}
 
 bool ConfigValidator::isDirective(str_vec_itr it) {
   return (Config::DELIMITERS.find(*(it - 1)) != std::string::npos && Config::DELIMITERS.find(*it) == std::string::npos);
-}
-
-std::map<const std::string, int> ConfigValidator::createDuplicateCheckMap(const std::string target) {
-  std::map<const std::string, int> map;
-
-  if (target == DRCTV_NAME_SRVR) {
-    map[DRCTV_NAME_LSTN] = 0;
-    map[DRCTV_NAME_SRVR_NM] = 0;
-    map[DRCTV_NAME_MX_CLNT_BDY_SZ] = 0;
-  } else if (target == DRCTV_NAME_LCTN) {
-    map[DRCTV_NAME_ALLWD_MTHD] = 0;
-    map[DRCTV_NAME_ROOT] = 0;
-    map[DRCTV_NAME_OUT_INDX] = 0;
-    map[DRCTV_NAME_INDX] = 0;
-    map[DRCTV_NAME_RDRCT] = 0;
-  }
-  return (map);
 }
 
 e_drctv_cd ConfigValidator::getDirectiveCode(std::string target) {
@@ -164,11 +138,78 @@ void ConfigValidator::checkMainDirectives(const std::vector<std::string> tokens)
   str_vec_itr it[2];
   it[BEGIN] = tokens.begin();
   it[END] = tokens.end();
-  while (it[BEGIN] != tokens.end()) {
+  while (it[BEGIN] != it[END]) {
     if (*it[BEGIN] == "{")
       findEndBrace(++it[BEGIN]);
-    if (!isValidDirectiveName(it[BEGIN], DRCTV_NAME_MAIN))
+    if (*it[BEGIN] != "}" && *it[BEGIN] != DRCTV_NAME_SRVR)
       throw (std::runtime_error(ERR_MSG_INVLD_DRCTV));
     it[BEGIN]++;
   }
+}
+
+bool ConfigValidator::isValidValueNum(str_vec_itr it) {
+  size_t cnt = 0;
+  std::string directive;
+
+  if (!isDirective(it))
+    return (true);
+  directive = *it++;
+  while (Config::DELIMITERS.find(*it++) == std::string::npos)
+    cnt++;
+  if (cnt == 0)
+    return (false);
+  if (cnt == 2 && directive != DRCTV_NAME_ERR_PG && directive != DRCTV_NAME_ALLWD_MTHD)
+    return (false);
+  if (directive == DRCTV_NAME_ERR_PG && cnt != 2)
+    return (false);
+  if (cnt == 3 && directive != DRCTV_NAME_ALLWD_MTHD)
+    return (false);
+  if (cnt >= 4)
+    return (false);
+  return (true);
+}
+
+void ConfigValidator::checkAllDirectives(const std::vector<std::string> tokens) {
+  str_vec_itr it[2];
+  it[BEGIN] = tokens.begin();
+  it[END] = tokens.end();
+  try {
+    while (it[BEGIN] != it[END]) {
+      validatePort(it[BEGIN], it[END]);
+      it[BEGIN]++;
+    }
+  } catch (...) {
+    throw ;
+  }
+}
+
+void ConfigValidator::validatePort(str_vec_itr begin, str_vec_itr end) {
+  if (*begin != DRCTV_NAME_LSTN)
+    return ;
+  try {
+    int port = stoi(*++begin);
+    while (++begin != end) {
+      if (!isDirective(begin) || *begin != DRCTV_NAME_LSTN)
+        continue ;
+      if (port == stoi(*++begin))
+        throw (std::runtime_error(ERR_MSG_DPLCTD_PORT));
+    }
+  } catch (std::runtime_error &e) {
+    throw (e);
+  } catch (...) {
+    throw (std::runtime_error(ERR_MSG_INVLD_PORT));
+  }
+}
+
+bool ConfigValidator::isLocationDuplicated(str_vec_itr begin, str_vec_itr end) {
+  if (*begin != DRCTV_NAME_LCTN)
+    return (true);
+  std::string target = *++begin;
+  while (++begin != end) {
+    if (!isDirective(begin) || *begin != DRCTV_NAME_LCTN)
+      continue ;
+    if (target == *++begin)
+      return (false);
+  }
+  return (true);
 }
