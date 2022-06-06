@@ -16,6 +16,7 @@ SRCS      := main.cpp \
 						ConfigParser.cpp \
 						ConfigValidator.cpp \
 						ServerConfig.cpp \
+						LocationConfig.cpp \
 						Utils.cpp \
 
 OBJS      := $(addprefix $(OBJDIR)/, $(notdir $(SRCS:.cpp=.o)))
@@ -65,6 +66,7 @@ test_compile = clang++ -std=c++11 \
 	./src/ConfigParser.cpp \
 	./src/ConfigValidator.cpp \
 	./src/ServerConfig.cpp \
+	./src/LocationConfig.cpp \
 	./src/Utils.cpp \
 	-g -fsanitize=address -fsanitize=undefined \
 	-I$(gtestdir) $(INCLUDE) -lpthread -o tester

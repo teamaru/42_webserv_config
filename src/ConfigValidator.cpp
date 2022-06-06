@@ -1,5 +1,13 @@
 #include "ConfigValidator.hpp"
 
+ConfigValidator *ConfigValidator::instance_ = 0;
+
+ConfigValidator* ConfigValidator::instance() {
+  if(instance_ == 0)
+    instance_ = new ConfigValidator;
+  return instance_;
+}
+
 ConfigValidator::ConfigValidator() {
 }
 
@@ -23,16 +31,15 @@ void ConfigValidator::validateConfigFile(const std::vector<std::string> tokens) 
     return ;
   if (!isValidBraceNum(tokens))
     throw (std::runtime_error(ERR_MSG_IVLD_NUM_BRCKT));
-  if (!isValidBracePlace(tokens, DRCTV_NAME_SRVR))
+  if (!isValidBracePlace(tokens, Config::DERECTIVE_NAMES.at(SRVR)))
     throw (std::runtime_error(ERR_MSG_UNEXPCTD_TKN));
-  if (!isValidBracePlace(tokens, DRCTV_NAME_LCTN))
+  if (!isValidBracePlace(tokens, Config::DERECTIVE_NAMES.at(LCTN)))
     throw (std::runtime_error(ERR_MSG_UNEXPCTD_TKN));
 
   try {
     checkMainDirectives(tokens);
-    checkDerective(tokens, DRCTV_NAME_SRVR);
-    checkDerective(tokens, DRCTV_NAME_LCTN);
-    checkAllDirectives(tokens);
+    checkDerective(tokens, Config::DERECTIVE_NAMES.at(SRVR));
+    checkDerective(tokens, Config::DERECTIVE_NAMES.at(LCTN));
   } catch (...) {
     throw ;
   }
@@ -45,7 +52,7 @@ bool ConfigValidator::isValidBraceNum(const std::vector<std::string> tokens) {
 }
 
 bool ConfigValidator::isValidBracePlace(const std::vector<std::string> tokens, std::string target) {
-  int pad = target == DRCTV_NAME_SRVR ? 1 : 2;
+  int pad = target == Config::DERECTIVE_NAMES.at(SRVR) ? 1 : 2;
   str_vec_itr it = tokens.begin();
   while ((it = std::find(it, tokens.end(), target)) != tokens.end()) {
     it += pad;
@@ -56,7 +63,7 @@ bool ConfigValidator::isValidBracePlace(const std::vector<std::string> tokens, s
 }
 
 bool ConfigValidator::isServerExist(const std::vector<std::string> tokens) {
-  return (std::find(tokens.begin(), tokens.end(), DRCTV_NAME_SRVR) != tokens.end());
+  return (std::find(tokens.begin(), tokens.end(), Config::DERECTIVE_NAMES.at(SRVR)) != tokens.end());
 }
 
 void ConfigValidator::checkDerective(const std::vector<std::string> tokens, const std::string target) {
@@ -66,7 +73,7 @@ void ConfigValidator::checkDerective(const std::vector<std::string> tokens, cons
   while (it[BEGIN] != tokens.end()) {
     it[BEGIN] = std::find(it[BEGIN], tokens.end(), "{");
     it[END] = it[BEGIN];
-    findEndBrace(++it[END]);
+    Utils::findEndBrace(++it[END]);
     try {
       scanDerective(it, target);
     } catch (...) {
@@ -76,24 +83,26 @@ void ConfigValidator::checkDerective(const std::vector<std::string> tokens, cons
   }
 }
 
-void ConfigValidator::findEndBrace(str_vec_itr &it) {
-  while (*it != "}") {
-    if (*it == "{")
-      findEndBrace(++it);
-    it++;
-  }
-}
-
 void ConfigValidator::scanDerective(str_vec_itr it[2], const std::string target) {
   while (++it[BEGIN] != it[END]) {
     if (*it[BEGIN] == "{")
-      findEndBrace(++it[BEGIN]);
+      Utils::findEndBrace(++it[BEGIN]);
     if (!isValidDirectiveName(it[BEGIN], target))
       throw (std::runtime_error(ERR_MSG_INVLD_DRCTV));
     if (isDerectiveDuplicated(it[BEGIN], it[END]))
       throw (std::runtime_error(ERR_MSG_DPLCT_DRCTV));
     if (!isValidValueNum(it[BEGIN]))
       throw (std::runtime_error(ERR_MSG_INVLD_VALUE_NUM));
+    if (!isValidListen(it[BEGIN]))
+      throw (std::runtime_error(ERR_MSG_INVLD_LSTN));
+    if (!isValidErrorPage(it[BEGIN]))
+      throw (std::runtime_error(ERR_MSG_INVLD_ERR_PG));
+    if(!isValidAllowedMethod(it[BEGIN]))
+      throw (std::runtime_error(ERR_MSG_INVLD_ALWD_MTHD));
+    if (!isValidAutoIndex(it[BEGIN]))
+      throw (std::runtime_error(ERR_MSG_INVLD_AUTO_INDEX));
+    if (!isValidReturn(it[BEGIN]))
+      throw (std::runtime_error(ERR_MSG_INVLD_RTRN));
     if (!isLocationDuplicated(it[BEGIN], it[END]))
       throw (std::runtime_error(ERR_MSG_DPLCTD_LCTN));
   }
@@ -101,7 +110,7 @@ void ConfigValidator::scanDerective(str_vec_itr it[2], const std::string target)
 
 bool ConfigValidator::isDerectiveDuplicated(str_vec_itr begin, str_vec_itr end) {
   std::string target = *begin;
-  if (!isDirective(begin) || target == DRCTV_NAME_LCTN || target == DRCTV_NAME_ERR_PG)
+  if (!isDirective(begin) || target == Config::DERECTIVE_NAMES.at(LCTN) || target == Config::DERECTIVE_NAMES.at(ERR_PG))
     return (false);
   while (++begin != end) {
     if (!isDirective(begin))
@@ -112,19 +121,16 @@ bool ConfigValidator::isDerectiveDuplicated(str_vec_itr begin, str_vec_itr end) 
   return (false);
 }
 
-
 bool ConfigValidator::isDirective(str_vec_itr it) {
   return (Config::DELIMITERS.find(*(it - 1)) != std::string::npos && Config::DELIMITERS.find(*it) == std::string::npos);
 }
 
 e_drctv_cd ConfigValidator::getDirectiveCode(std::string target) {
-  str_vec_itr it = Config::DERECTIVE_NAMES.begin();
-  size_t directive_code = 0;
-  while (it != Config::DERECTIVE_NAMES.end() && *it != target) {
-    directive_code++;
+  std::map<const e_drctv_cd, std::string> directive_names = Config::DERECTIVE_NAMES;
+  std::map<const e_drctv_cd, std::string>::iterator it = directive_names.begin();
+  while (it != Config::DERECTIVE_NAMES.end() && it->second != target)
     it++;
-  }
-  return ((e_drctv_cd)directive_code);
+  return (it->first);
 }
 
 bool ConfigValidator::isValidDirectiveName(str_vec_itr it, std::string target) {
@@ -140,8 +146,8 @@ void ConfigValidator::checkMainDirectives(const std::vector<std::string> tokens)
   it[END] = tokens.end();
   while (it[BEGIN] != it[END]) {
     if (*it[BEGIN] == "{")
-      findEndBrace(++it[BEGIN]);
-    if (*it[BEGIN] != "}" && *it[BEGIN] != DRCTV_NAME_SRVR)
+      Utils::findEndBrace(++it[BEGIN]);
+    if (*it[BEGIN] != "}" && *it[BEGIN] != Config::DERECTIVE_NAMES.at(SRVR))
       throw (std::runtime_error(ERR_MSG_INVLD_DRCTV));
     it[BEGIN]++;
   }
@@ -158,58 +164,83 @@ bool ConfigValidator::isValidValueNum(str_vec_itr it) {
     cnt++;
   if (cnt == 0)
     return (false);
-  if (cnt == 2 && directive != DRCTV_NAME_ERR_PG && directive != DRCTV_NAME_ALLWD_MTHD)
+  if (directive == Config::DERECTIVE_NAMES.at(CGI))
+    return (true);
+  if (cnt == 2 && directive != Config::DERECTIVE_NAMES.at(ERR_PG) && directive != Config::DERECTIVE_NAMES.at(ALLWD_MTHD) && directive != Config::DERECTIVE_NAMES.at(RTRN))
     return (false);
-  if (directive == DRCTV_NAME_ERR_PG && cnt != 2)
+  if ((directive == Config::DERECTIVE_NAMES.at(ERR_PG) || directive == Config::DERECTIVE_NAMES.at(RTRN)) && cnt != 2)
     return (false);
-  if (cnt == 3 && directive != DRCTV_NAME_ALLWD_MTHD)
+  if (cnt == 3 && directive != Config::DERECTIVE_NAMES.at(ALLWD_MTHD))
     return (false);
   if (cnt >= 4)
     return (false);
   return (true);
 }
 
-void ConfigValidator::checkAllDirectives(const std::vector<std::string> tokens) {
-  str_vec_itr it[2];
-  it[BEGIN] = tokens.begin();
-  it[END] = tokens.end();
-  try {
-    while (it[BEGIN] != it[END]) {
-      validatePort(it[BEGIN], it[END]);
-      it[BEGIN]++;
-    }
-  } catch (...) {
-    throw ;
-  }
-}
-
-void ConfigValidator::validatePort(str_vec_itr begin, str_vec_itr end) {
-  if (*begin != DRCTV_NAME_LSTN)
-    return ;
-  try {
-    int port = stoi(*++begin);
-    while (++begin != end) {
-      if (!isDirective(begin) || *begin != DRCTV_NAME_LSTN)
-        continue ;
-      if (port == stoi(*++begin))
-        throw (std::runtime_error(ERR_MSG_DPLCTD_PORT));
-    }
-  } catch (std::runtime_error &e) {
-    throw (e);
-  } catch (...) {
-    throw (std::runtime_error(ERR_MSG_INVLD_PORT));
-  }
-}
-
 bool ConfigValidator::isLocationDuplicated(str_vec_itr begin, str_vec_itr end) {
-  if (*begin != DRCTV_NAME_LCTN)
+  if (*begin != Config::DERECTIVE_NAMES.at(LCTN))
     return (true);
   std::string target = *++begin;
   while (++begin != end) {
-    if (!isDirective(begin) || *begin != DRCTV_NAME_LCTN)
+    if (!isDirective(begin) || *begin != Config::DERECTIVE_NAMES.at(LCTN))
       continue ;
     if (target == *++begin)
       return (false);
+  }
+  return (true);
+}
+
+bool ConfigValidator::isValidErrorPage(str_vec_itr begin) {
+  if (*begin != Config::DERECTIVE_NAMES.at(ERR_PG))
+    return (true);
+  try {
+    int status_code = std::stoi(*++begin);
+    if (!(300 <= status_code && status_code <= 599))
+      return (false);
+  } catch (...) {
+    return (false);
+  }
+  return (true);
+}
+
+bool ConfigValidator::isValidAllowedMethod(str_vec_itr begin) {
+  if (*begin != Config::DERECTIVE_NAMES.at(ALLWD_MTHD))
+    return (true);
+  while (*++begin != ";")
+    if (std::find(Config::ALLOWED_METHODS.begin(), Config::ALLOWED_METHODS.end(), *begin) == Config::ALLOWED_METHODS.end())
+      return (false);
+  return (true);
+}
+
+bool ConfigValidator::isValidAutoIndex(str_vec_itr begin) {
+  if (*begin != Config::DERECTIVE_NAMES.at(AUTO_INDX))
+    return (true);
+  begin++;
+  return (*begin == "on" || *begin == "off");
+}
+
+bool ConfigValidator::isValidReturn(str_vec_itr begin) {
+  if (*begin != Config::DERECTIVE_NAMES.at(RTRN))
+    return (true);
+  try {
+    int status_code = std::stoi(*++begin);
+    if (!(0 <= status_code && status_code <= 599))
+      return (false);
+  } catch (...) {
+    return (false);
+  }
+  return (true);
+}
+
+bool ConfigValidator::isValidListen(str_vec_itr begin) {
+  if (*begin != Config::DERECTIVE_NAMES.at(LSTN))
+    return (true);
+  try {
+    int listen = stoi(*++begin);
+    if (!(0 <= listen && listen <= Config::MAX_PORT_NUM))
+      return (false);
+  } catch (...) {
+    return (false);
   }
   return (true);
 }
